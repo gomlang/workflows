@@ -1,0 +1,5 @@
+[module]
+path = "ecosystem::workflows"
+
+[dependencies]
+"ecosystem::testkit" = true

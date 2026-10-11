@@ -1,0 +1,1085 @@
+package tests;
+
+use ecosystem::workflows as verify;
+use std::bytes;
+use std::crypto::hash;
+use std::env;
+use std::fs;
+use std::json;
+use std::path;
+use std::process;
+use std::task;
+use std::testing;
+use std::time;
+use std::toml;
+
+fn fixture() -> string {
+    let root = testing::expect_ok(
+        verify::temporary_directory("_artifact/registry-tests"),
+        "temporary registry root",
+    );
+    let root = testing::expect_ok(path::absolute_structured(root), "absolute registry root");
+    for name in Vec::from_array(["one", "two"]) {
+        let module = path::join(root, name);
+        testing::assert_ok(fs::create_dir_all(path::join(module, "_artifact")));
+        testing::assert_ok(
+            fs::write_file_structured(
+                path::join(module, "goml.toml"),
+                "[module]\npath = \"ecosystem::" + name + "\"\n",
+            ),
+        );
+        testing::assert_ok(
+            fs::write_file_structured(path::join(module, "main.goml"), "package " + name + ";\n"),
+        );
+        testing::assert_ok(
+            fs::write_file_structured(path::join(module, "_artifact/ignored"), "generated output"),
+        );
+    }
+    root
+}
+
+fn check_snapshot(home: string, one_source: string) -> () {
+    let registry = path::join(home, "cache/registry");
+    let source = testing::expect_ok(
+        fs::read_file_structured(path::join(registry, "index.toml")),
+        "registry index",
+    );
+    let index = testing::expect_ok(toml::parse(source), "valid registry TOML");
+    let modules = testing::expect_some(
+        toml::field(index, "modules").and_then(|value| toml::as_table(value)),
+        "registry modules",
+    );
+    testing::assert_eq(modules.len(), 2);
+    for name in Vec::from_array(["one", "two"]) {
+        let entry = testing::expect_some(
+            toml::field(index, "modules").and_then(
+                |modules| toml::field(modules, "ecosystem::" + name),
+            ),
+            "module entry",
+        );
+        testing::assert(toml::field(entry, "latest").is_none());
+        testing::assert(toml::field(entry, "versions").is_none());
+        testing::assert(
+            toml::field(entry, "path").and_then(toml::as_string)
+                == Option::Some("ecosystem/" + name),
+        );
+        let directory = path::join(registry, "ecosystem/" + name);
+        let source = testing::expect_ok(
+            fs::read_file_structured(path::join(directory, "main.goml")),
+            "captured source",
+        );
+        testing::assert_eq(
+            source,
+            if name == "one" {
+                one_source
+            } else {
+                "package two;\n"
+            },
+        );
+        testing::assert(!fs::exists(path::join(directory, "_artifact")));
+    }
+}
+
+fn write_manifest(root: string, relative: string, content: string) -> () {
+    let directory = path::join(root, relative);
+    testing::assert_ok(fs::create_dir_all(directory));
+    testing::assert_ok(fs::write_file_structured(path::join(directory, "goml.toml"), content));
+}
+
+#[test]
+fn repository_root_uses_module_identity_in_a_renamed_checkout() -> () {
+    let root = fixture();
+    let checkout = path::join(root, "custom-verifier");
+    write_manifest(root, "custom-verifier", "[module]\npath = \"ecosystem::workflows\"\n");
+    testing::assert_ok(fs::create_dir_all(path::join(checkout, "nested/work")));
+    testing::assert_eq(
+        testing::expect_ok(verify::repository_root(checkout), "renamed checkout root"),
+        checkout,
+    );
+    testing::assert_eq(
+        testing::expect_ok(
+            verify::repository_root(path::join(checkout, "nested/work")),
+            "ancestor module root",
+        ),
+        checkout,
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn repository_root_skips_same_named_directories_with_other_modules() -> () {
+    let root = fixture();
+    let checkout = path::join(root, "custom-verifier");
+    write_manifest(root, "custom-verifier", "[module]\npath = \"ecosystem::workflows\"\n");
+    write_manifest(root, "custom-verifier/verification", "[module]\npath = \"example::fixture\"\n");
+    testing::assert_eq(
+        testing::expect_ok(
+            verify::repository_root(path::join(checkout, "verification")),
+            "same directory name does not identify the verifier",
+        ),
+        checkout,
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+fn snapshot_names(home: string) -> Vec[string] {
+    let content = testing::expect_ok(
+        fs::read_file_structured(path::join(home, "cache/registry/index.toml")),
+        "registry index",
+    );
+    let document = testing::expect_ok(toml::parse(content), "registry index TOML");
+    let entries = testing::expect_some(
+        toml::field(document, "modules").and_then(|value| toml::as_table(value)),
+        "registry modules",
+    );
+    let names = Vec::new();
+    for (name, _) in entries {
+        names.push(name);
+    }
+    names
+}
+
+#[test]
+fn selected_snapshot_only_requires_selected_checkout_and_dependencies() -> () {
+    let root = fixture();
+    let first = testing::expect_ok(
+        verify::registry_snapshot(root, root, Vec::from_array(["one"])),
+        "snapshot a partial checkout",
+    );
+    testing::assert(snapshot_names(first) == Vec::from_array(["ecosystem::one"]));
+    write_manifest(root, "two", "invalid TOML in an unrelated checkout");
+    let second = testing::expect_ok(
+        verify::registry_snapshot(root, root, Vec::from_array(["one", "one"])),
+        "unrelated checkouts and duplicate selections do not affect a snapshot",
+    );
+    testing::assert_eq(first, second);
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn snapshot_follows_transitive_dev_and_nested_fixture_dependencies() -> () {
+    let root = fixture();
+    write_manifest(
+        root,
+        "one",
+        "[module]\npath = \"ecosystem::one\"\n[dependencies]\n\"ecosystem::two\" = true\n",
+    );
+    write_manifest(
+        root,
+        "two",
+        "[module]\npath = \"ecosystem::two\"\n[dev-dependencies]\n\"ecosystem::one\" = true\n",
+    );
+    write_manifest(
+        root,
+        "two/testdata/downstream/native",
+        "[module]\npath = \"downstream::native\"\n[dev-dependencies]\n\"ecosystem::three\" = true\n",
+    );
+    write_manifest(root, "three", "[module]\npath = \"ecosystem::three\"\n");
+    let home = testing::expect_ok(
+        verify::registry_snapshot(root, root, Vec::from_array(["one"])),
+        "snapshot transitive dependencies and cycles",
+    );
+    testing::assert(
+        snapshot_names(home)
+            == Vec::from_array(["ecosystem::one", "ecosystem::three", "ecosystem::two"]),
+    );
+    testing::assert(
+        !fs::exists(path::join(home, "cache/registry/ecosystem/two/testdata/downstream/native")),
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn snapshot_reports_missing_selection_and_dependency_sources() -> () {
+    let root = fixture();
+    let error = testing::expect_err(
+        verify::registry_snapshot(root, root, Vec::from_array(["absent"])),
+        "missing selection",
+    );
+    testing::assert(error.contains("selected module absent"));
+    write_manifest(
+        root,
+        "one/testdata/downstream/native",
+        "[dependencies]\n\"ecosystem::absent\" = true\n",
+    );
+    let error = testing::expect_err(
+        verify::registry_snapshot(root, root, Vec::from_array(["one"])),
+        "missing fixture dependency",
+    );
+    testing::assert(error.contains("dependency absent"));
+    testing::assert(error.contains("one/testdata/downstream/native/goml.toml"));
+    testing::assert(!fs::exists(path::join(root, "_artifact/registry-snapshots")));
+    let all = testing::expect_ok(verify::parse_options(Vec::new(), root), "default selection");
+    testing::assert_err(verify::registry_snapshot(root, root, all.selected));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn consumer_selection_discovers_dependencies_without_publishing_consumer() -> () {
+    let root = fixture();
+    write_manifest(
+        root,
+        "explorer",
+        "[module]\npath = \"example::explorer\"\n[dependencies]\n\"ecosystem::one\" = true\n",
+    );
+    let home = testing::expect_ok(
+        verify::registry_snapshot(root, root, Vec::from_array(["explorer"])),
+        "consumer dependencies",
+    );
+    testing::assert(snapshot_names(home) == Vec::from_array(["ecosystem::one"]));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn applications_cannot_satisfy_ecosystem_library_dependencies() -> () {
+    let root = fixture();
+    write_manifest(root, "explorer", "[module]\npath = \"example::explorer\"\n");
+    write_manifest(
+        root,
+        "one",
+        "[module]\npath = \"ecosystem::one\"\n[dev-dependencies]\n\"ecosystem::explorer\" = true\n",
+    );
+    for selected in Vec::from_array(
+        [Vec::from_array(["one"]), Vec::from_array(["explorer", "one"])],
+    ) {
+        let error = testing::expect_err(
+            verify::registry_snapshot(root, root, selected),
+            "a successful snapshot must not omit a declared ecosystem dependency",
+        );
+        testing::assert(error.contains("ecosystem::explorer"));
+        testing::assert(error.contains("one/goml.toml"));
+    }
+    testing::assert(!fs::exists(path::join(root, "_artifact/registry-snapshots")));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn dependency_discovery_and_snapshot_exclude_generated_directories_and_symlinks() -> () {
+    let root = fixture();
+    write_manifest(
+        root,
+        "one",
+        "[module]\npath = \"ecosystem::one\"\n[build]\ntarget-dir = \"build/cache\"\n",
+    );
+    write_manifest(
+        root,
+        "one/testdata/downstream/native",
+        "[module]\npath = \"downstream::native\"\n[build]\ntarget-dir = \"generated\"\n[dependencies]\n\"ecosystem::two\" = true\n",
+    );
+    for relative in Vec::from_array(
+        [
+            "_artifact",
+            "_bootstrap",
+            ".git",
+            "__pycache__",
+            ".goml",
+            ".cache",
+            "node_modules",
+            "vendor",
+            "build/cache",
+            "testdata/downstream/native/generated",
+        ],
+    ) {
+        write_manifest(root, "one/" + relative + "/ignored-manifest", "invalid generated TOML");
+    }
+    write_manifest(root, "external", "[dependencies]\n\"ecosystem::missing\" = true\n");
+    testing::assert_ok(
+        fs::symbolic_link(path::join(root, "external"), path::join(root, "one/linked-directory")),
+    );
+    testing::assert_ok(fs::create_dir_all(path::join(root, "one/linked-manifest")));
+    testing::assert_ok(
+        fs::write_file_structured(
+            path::join(root, "one/linked-manifest/data.txt"),
+            "source fixture",
+        ),
+    );
+    testing::assert_ok(
+        fs::symbolic_link(
+            path::join(root, "external/goml.toml"),
+            path::join(root, "one/linked-manifest/goml.toml"),
+        ),
+    );
+    let home = testing::expect_ok(
+        verify::registry_snapshot(root, root, Vec::from_array(["one"])),
+        "ignore generated and linked manifests",
+    );
+    testing::assert(snapshot_names(home) == Vec::from_array(["ecosystem::one", "ecosystem::two"]));
+    let directory = path::join(home, "cache/registry/ecosystem/one");
+    testing::assert_eq(
+        testing::expect_ok(
+            fs::read_file_structured(path::join(directory, "linked-manifest/data.txt")),
+            "files beside a linked manifest remain source files",
+        ),
+        "source fixture",
+    );
+    for relative in Vec::from_array(
+        [
+            "_artifact",
+            "_bootstrap",
+            ".git",
+            "__pycache__",
+            ".goml",
+            ".cache",
+            "node_modules",
+            "vendor",
+            "build/cache",
+            "linked-directory",
+            "linked-manifest/goml.toml",
+        ],
+    ) {
+        testing::assert(!fs::exists(path::join(directory, relative)));
+    }
+    let reordered = testing::expect_ok(
+        verify::registry_snapshot(root, root, Vec::from_array(["two", "one"])),
+        "same closure regardless of selection order",
+    );
+    testing::assert_eq(home, reordered);
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn dependency_discovery_rejects_unsafe_paths_and_linked_checkouts() -> () {
+    let root = fixture();
+    for target in Vec::from_array(["", ".", "/tmp", "../outside", "build/../cache"]) {
+        write_manifest(
+            root,
+            "one",
+            "[module]\npath = \"ecosystem::one\"\n[build]\ntarget-dir = \"" + target + "\"\n",
+        );
+        let error = testing::expect_err(
+            verify::registry_snapshot(root, root, Vec::from_array(["one"])),
+            "unsafe build output",
+        );
+        testing::assert(error.contains("invalid build target directory"));
+    }
+    write_manifest(
+        root,
+        "one",
+        "[module]\npath = \"ecosystem::one\"\n[dependencies]\n\"ecosystem::../outside\" = true\n",
+    );
+    let error = testing::expect_err(
+        verify::registry_snapshot(root, root, Vec::from_array(["one"])),
+        "unsafe dependency",
+    );
+    testing::assert(error.contains("invalid module directory"));
+    testing::assert(error.contains("one/goml.toml"));
+    testing::assert_ok(fs::symbolic_link(path::join(root, "two"), path::join(root, "linked")));
+    testing::assert_err(verify::registry_snapshot(root, root, Vec::from_array(["linked"])));
+    testing::assert_ok(fs::remove_file(path::join(root, "one/goml.toml")));
+    testing::assert_ok(
+        fs::symbolic_link(path::join(root, "two/goml.toml"), path::join(root, "one/goml.toml")),
+    );
+    testing::assert_err(verify::registry_snapshot(root, root, Vec::from_array(["one"])));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn concurrent_publication_only_exposes_complete_identical_snapshots() -> () {
+    let root = fixture();
+    let homes = task::scope(
+        |scope| {
+            let jobs = Vec::new();
+            for _ in 0..8 {
+                jobs.push(
+                    scope.spawn(
+                        |_| {
+                            let captured = testing::expect_ok(
+                                verify::capture_modules(root, Vec::from_array(["one", "two"])),
+                                "capture modules",
+                            );
+                            let home = testing::expect_ok(
+                                verify::publish_snapshot(root, captured),
+                                "publish snapshot",
+                            );
+                            check_snapshot(home, "package one;\n");
+                            home
+                        },
+                    ),
+                );
+            }
+            task::join_all(jobs)
+        },
+    );
+    for home in homes {
+        testing::assert_eq(home, homes[0]);
+    }
+    let entries = testing::expect_ok(
+        fs::read_dir_names_structured(path::join(root, "_artifact/registry-snapshots")),
+        "snapshot entries",
+    );
+    testing::assert_eq(entries.len(), 1);
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn snapshot_hash_and_sources_use_the_same_captured_bytes() -> () {
+    let root = fixture();
+    let names = Vec::from_array(["one", "two"]);
+    let captured = testing::expect_ok(verify::capture_modules(root, names), "capture modules");
+    testing::assert_ok(
+        fs::write_file_structured(path::join(root, "one/main.goml"), "package changed;\n"),
+    );
+    let first = testing::expect_ok(
+        verify::publish_snapshot(root, captured),
+        "publish captured snapshot",
+    );
+    check_snapshot(first, "package one;\n");
+    let changed = testing::expect_ok(
+        verify::capture_modules(root, names),
+        "capture changed modules",
+    );
+    let second = testing::expect_ok(
+        verify::publish_snapshot(root, changed),
+        "publish changed snapshot",
+    );
+    testing::assert_ne(first, second);
+    check_snapshot(second, "package changed;\n");
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn invalid_coordinate_never_publishes_partial_registry() -> () {
+    let root = fixture();
+    testing::assert_ok(
+        fs::write_file_structured(
+            path::join(root, "two/goml.toml"),
+            "[module]\npath = \"unexpected::two\"\n",
+        ),
+    );
+    let error = testing::expect_err(
+        verify::capture_modules(root, Vec::from_array(["one", "two"])),
+        "reject module coordinate",
+    );
+    testing::assert(error.contains("unexpected module coordinate"));
+    testing::assert(!fs::exists(path::join(root, "_artifact/registry-snapshots")));
+    testing::assert_err(verify::capture_modules(root, Vec::from_array(["../outside"])));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn changed_cached_registry_sources_are_rejected_without_overwriting_them() -> () {
+    for change in Vec::from_array(
+        ["edit", "delete", "add", "symlink", "extra-link", "index", "index-link", "directory-link"],
+    ) {
+        let root = fixture();
+        let captured = testing::expect_ok(
+            verify::capture_modules(root, Vec::from_array(["one", "two"])),
+            "capture modules",
+        );
+        let home = testing::expect_ok(verify::publish_snapshot(root, captured), "initial snapshot");
+        let directory = path::join(home, "cache/registry/ecosystem/one");
+        let source = path::join(directory, "main.goml");
+        match change {
+            "edit" => testing::assert_ok(fs::write_file_structured(source, "changed source")),
+            "delete" => testing::assert_ok(fs::remove_file(source)),
+            "add" => testing::assert_ok(
+                fs::write_file_structured(path::join(directory, "extra.goml"), "extra source"),
+            ),
+            "symlink" => {
+                testing::assert_ok(fs::remove_file(source));
+                testing::assert_ok(fs::symbolic_link(path::join(root, "one/main.goml"), source));
+            },
+            "extra-link" => testing::assert_ok(
+                fs::symbolic_link(
+                    path::join(root, "one/main.goml"),
+                    path::join(directory, "extra.goml"),
+                ),
+            ),
+            "index-link" => {
+                let index = path::join(home, "cache/registry/index.toml");
+                let saved = path::join(root, "saved-index.toml");
+                testing::assert_ok(fs::rename(index, saved));
+                testing::assert_ok(fs::symbolic_link(saved, index));
+            },
+            "directory-link" => {
+                let saved = path::join(root, "saved-sources");
+                testing::assert_ok(fs::rename(directory, saved));
+                testing::assert_ok(fs::symbolic_link(saved, directory));
+            },
+            _ => testing::assert_ok(
+                fs::write_file_structured(path::join(home, "cache/registry/index.toml"), ""),
+            ),
+        }
+        let error = testing::expect_err(
+            verify::publish_snapshot(root, captured),
+            "reject changed snapshot: " + change,
+        );
+        testing::assert(error.contains(home));
+        if change == "edit" {
+            testing::assert_eq(
+                testing::expect_ok(fs::read_file_structured(source), "preserved edited source"),
+                "changed source",
+            );
+        }
+        testing::assert_ok(fs::remove_dir_all(root));
+    }
+}
+
+#[test]
+fn generated_outputs_do_not_prevent_registry_reuse() -> () {
+    let root = fixture();
+    let captured = testing::expect_ok(
+        verify::capture_modules(root, Vec::from_array(["one", "two"])),
+        "capture modules",
+    );
+    let home = testing::expect_ok(verify::publish_snapshot(root, captured), "initial snapshot");
+    for relative in Vec::from_array(["_artifact/build", ".goml/cache"]) {
+        let directory = path::join(home, "cache/registry/ecosystem/one/" + relative);
+        testing::assert_ok(fs::create_dir_all(directory));
+        testing::assert_ok(fs::write_file_structured(path::join(directory, "cache"), "generated"));
+    }
+    testing::assert_eq(
+        testing::expect_ok(verify::publish_snapshot(root, captured), "reuse with outputs"),
+        home,
+    );
+    let empty = testing::expect_ok(verify::publish_snapshot(root, Vec::new()), "empty registry");
+    testing::assert_eq(
+        testing::expect_ok(verify::publish_snapshot(root, Vec::new()), "reuse empty registry"),
+        empty,
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn registry_skips_symlinks_and_keeps_binary_sources() -> () {
+    let root = fixture();
+    testing::assert_ok(fs::symbolic_link(root, path::join(root, "one/loop")));
+    let raw = bytes::Bytes::from_vec(Vec::from_array([0.to_u8(), 255.to_u8(), 10.to_u8()]));
+    testing::assert_ok(fs::write_bytes_structured(path::join(root, "one/raw.bin"), raw));
+    let captured = testing::expect_ok(
+        verify::capture_modules(root, Vec::from_array(["one", "two"])),
+        "capture binary data",
+    );
+    let home = testing::expect_ok(verify::publish_snapshot(root, captured), "publish binary data");
+    let target = path::join(home, "cache/registry/ecosystem/one");
+    testing::assert(
+        testing::expect_ok(
+            fs::read_bytes_structured(path::join(target, "raw.bin")),
+            "read binary data",
+        ).to_vec()
+            == raw.to_vec(),
+    );
+    testing::assert(!fs::exists(path::join(target, "loop")));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn registry_excludes_nested_downstream_module() -> () {
+    let root = fixture();
+    let downstream = path::join(root, "one/testdata/downstream/native");
+    testing::assert_ok(fs::create_dir_all(downstream));
+    testing::assert_ok(
+        fs::write_file_structured(
+            path::join(downstream, "goml.toml"),
+            "[module]\npath = \"downstream::one\"\n",
+        ),
+    );
+    let captured = testing::expect_ok(
+        verify::capture_modules(root, Vec::from_array(["one", "two"])),
+        "capture modules",
+    );
+    let home = testing::expect_ok(verify::publish_snapshot(root, captured), "publish snapshot");
+    testing::assert(
+        !fs::exists(path::join(home, "cache/registry/ecosystem/one/testdata/downstream/native")),
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn command_errors_are_recorded_and_options_reject_unknown_names() -> () {
+    testing::assert_err(verify::parse_options(Vec::from_array(["--goml"]), "/repo"));
+    testing::assert_err(verify::parse_options(Vec::from_array(["misspelled"]), "/repo"));
+    let options = testing::expect_ok(
+        verify::parse_options(Vec::from_array(["color", "--no-race", "color"]), "/repo"),
+        "valid options",
+    );
+    testing::assert(options.selected == Vec::from_array(["color"]));
+    testing::assert(!options.race);
+    let root = fixture();
+    let context = verify::Verification {
+        root,
+        libraries: root,
+        home: root,
+        goml: "/not-used",
+        records: Vec::new(),
+    };
+    let log = path::join(root, "failure.log");
+    testing::assert_err(
+        verify::run_command(
+            context,
+            Vec::from_array(["sh", "-c", "printf failure >&2; exit 7"]),
+            root,
+            "",
+            log,
+            false,
+        ),
+    );
+    testing::assert_eq(
+        testing::expect_ok(fs::read_file_structured(log), "failed command log"),
+        "failure",
+    );
+    testing::assert_eq(context.records.len(), 1);
+    testing::assert_eq(
+        json::field(context.records[0], "exit_code").and_then(|value| json::as_int(value)).unwrap_or(
+            -1,
+        ),
+        7,
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+fn failed_report(root: string, driver: string) -> (string, json::Value) {
+    let options = verify::Options {
+        selected: Vec::from_array(["one"]),
+        goml: driver,
+        registry_only: false,
+        race: false,
+        list: false,
+    };
+    testing::assert_err(verify::verify_all(root, root, root, options));
+    let content = testing::expect_ok(
+        fs::read_file_structured(path::join(root, "_artifact/verification/report.json")),
+        "failed run report",
+    );
+    (content, testing::expect_ok(json::parse(content), "report JSON"))
+}
+
+fn report_log(report: json::Value) -> string {
+    let commands = testing::expect_some(
+        json::field(report, "commands").and_then(|value| json::as_array(value)),
+        "report commands",
+    );
+    testing::assert_eq(commands.len(), 1);
+    testing::expect_some(
+        json::field(commands[0], "log").and_then(|value| json::as_string(value)),
+        "command log path",
+    )
+}
+
+#[test]
+fn repeated_runs_preserve_original_logs_and_their_reports() -> () {
+    let root = fixture();
+    let (first_content, first) = failed_report(root, "false");
+    let first_log = report_log(first);
+    let original = testing::expect_ok(fs::read_file_structured(first_log), "first failure log");
+    let (second_content, second) = failed_report(root, "sh");
+    let second_log = report_log(second);
+    testing::assert_ne(first_log, second_log);
+    testing::assert_eq(
+        testing::expect_ok(fs::read_file_structured(first_log), "preserved first log"),
+        original,
+    );
+    testing::assert_ne(
+        testing::expect_ok(fs::read_file_structured(second_log), "second failure log"),
+        original,
+    );
+    for (content, report) in Vec::from_array([(first_content, first), (second_content, second)]) {
+        let directory = testing::expect_some(
+            json::field(report, "run_directory").and_then(|value| json::as_string(value)),
+            "retained run directory",
+        );
+        testing::assert(path::file_name(directory).unwrap_or("").starts_with("run-"));
+        testing::assert_eq(
+            testing::expect_ok(
+                fs::read_file_structured(path::join(directory, "report.json")),
+                "retained report",
+            ),
+            content,
+        );
+    }
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn report_records_failures_between_successful_commands() -> () {
+    let root = fixture();
+    let (_, report) = failed_report(root, "true");
+    let commands = testing::expect_some(
+        json::field(report, "commands").and_then(|value| json::as_array(value)),
+        "recorded commands",
+    );
+    testing::assert_eq(commands.len(), 3);
+    for command in commands {
+        testing::assert_eq(
+            json::field(command, "exit_code").and_then(|value| json::as_int(value)).unwrap_or(-1),
+            0,
+        );
+    }
+    let error = testing::expect_some(
+        json::field(report, "error").and_then(|value| json::as_string(value)),
+        "failure reason retained in report",
+    );
+    testing::assert(error.contains("_artifact/build/pkg"));
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn current_incomplete_report_is_visible_before_the_first_command() -> () {
+    let root = fixture();
+    let reports = path::join(root, "_artifact/verification");
+    testing::assert_ok(fs::create_dir_all(reports));
+    testing::assert_ok(
+        fs::write_file_structured(
+            path::join(reports, "report.json"),
+            "{\"success\":true,\"run_directory\":\"previous-run\"}",
+        ),
+    );
+    let driver = path::join(root, "driver");
+    testing::assert_ok(
+        fs::write_file_structured(
+            driver,
+            "#!/bin/sh\ncp \"$GOML_VERIFY_ROOT/_artifact/verification/report.json\" \"$GOML_VERIFY_ROOT/started.json\"\nexit 7\n",
+        ),
+    );
+    testing::assert(
+        testing::expect_ok(
+            process::Command::new("chmod").args(Vec::from_array(["755", driver])).status_structured(),
+            "executable test driver",
+        ).success(),
+    );
+    let (_, finished) = failed_report(root, driver);
+    let started = testing::expect_ok(
+        json::parse(
+            testing::expect_ok(
+                fs::read_file_structured(path::join(root, "started.json")),
+                "initial report",
+            ),
+        ),
+        "initial report JSON",
+    );
+    testing::assert(
+        json::field(started, "completed").and_then(|value| json::as_bool(value))
+            == Option::Some(false),
+    );
+    testing::assert(
+        json::field(started, "success").and_then(|value| json::as_bool(value))
+            == Option::Some(false),
+    );
+    testing::assert(
+        json::field(finished, "completed").and_then(|value| json::as_bool(value))
+            == Option::Some(true),
+    );
+    testing::assert(
+        json::field(started, "run_directory").and_then(|value| json::as_string(value))
+            == json::field(finished, "run_directory").and_then(|value| json::as_string(value)),
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn report_parents_are_created_beside_the_filesystem_destination() -> () {
+    let root = fixture();
+    let outer = path::join(root, "one");
+    let actual = path::join(root, "two");
+    let nested = path::join(actual, "nested");
+    testing::assert_ok(fs::create_dir(nested));
+    testing::assert_ok(fs::symbolic_link(nested, path::join(outer, "link")));
+    let requested = outer + "/link/../reports/result.json";
+    let expected = path::join(actual, "reports/result.json");
+    for content in Vec::from_array(["{\"success\":false}\n", "{\"success\":true}\n"]) {
+        testing::assert_ok(verify::atomic_report(requested, content));
+        testing::assert_eq(
+            testing::expect_ok(fs::read_file_structured(expected), "actual report destination"),
+            content,
+        );
+        testing::assert(!fs::exists(path::join(outer, "reports")));
+    }
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn final_report_write_failure_preserves_the_verification_error() -> () {
+    let root = fixture();
+    let driver = path::join(root, "driver");
+    testing::assert_ok(
+        fs::write_file_structured(
+            driver,
+            "#!/bin/sh\nreport=\"$GOML_VERIFY_ROOT/_artifact/verification/report.json\"\nrm \"$report\"\nmkdir \"$report\"\nexit 7\n",
+        ),
+    );
+    testing::assert(
+        testing::expect_ok(
+            process::Command::new("chmod").args(Vec::from_array(["755", driver])).status_structured(),
+            "executable failing driver",
+        ).success(),
+    );
+    let options = verify::Options {
+        selected: Vec::from_array(["one"]),
+        goml: driver,
+        registry_only: false,
+        race: false,
+        list: false,
+    };
+    let error = testing::expect_err(
+        verify::verify_all(root, root, root, options),
+        "verification and report publication both fail",
+    );
+    testing::assert(error.starts_with("command failed; see "));
+    testing::assert(error.contains("Could not write final report:"));
+    let runs = path::join(root, "_artifact/verification/runs");
+    let names = testing::expect_ok(fs::read_dir_names_structured(runs), "run directories");
+    testing::assert_eq(names.len(), 1);
+    let retained = testing::expect_ok(
+        json::parse(
+            testing::expect_ok(
+                fs::read_file_structured(path::join(path::join(runs, names[0]), "report.json")),
+                "retained final report",
+            ),
+        ),
+        "retained report JSON",
+    );
+    testing::assert(
+        json::field(retained, "completed").and_then(|value| json::as_bool(value))
+            == Option::Some(true),
+    );
+    let cause = testing::expect_some(
+        json::field(retained, "error").and_then(|value| json::as_string(value)),
+        "original command failure retained",
+    );
+    testing::assert(error.starts_with(cause));
+    testing::assert_eq(
+        json::field(
+            testing::expect_some(
+                json::field(retained, "commands").and_then(|value| json::as_array(value)),
+                "retained commands",
+            )[0],
+            "exit_code",
+        ).and_then(|value| json::as_int(value)).unwrap_or(-1),
+        7,
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn option_failures_replace_old_success_reports_and_keep_the_original_error() -> () {
+    let root = fixture();
+    let reports = path::join(root, "_artifact/verification");
+    testing::assert_ok(fs::create_dir_all(reports));
+    let report = path::join(reports, "report.json");
+    for arguments in Vec::from_array([Vec::from_array(["--unknown"]), Vec::from_array(["--goml"])]) {
+        testing::assert_ok(fs::write_file_structured(report, "{\"success\":true}"));
+        let error = testing::expect_err(
+            verify::execute_arguments(root, arguments),
+            "invalid options",
+        );
+        let result = testing::expect_ok(
+            json::parse(
+                testing::expect_ok(fs::read_file_structured(report), "setup failure report"),
+            ),
+            "setup failure JSON",
+        );
+        testing::assert(
+            json::field(result, "success").and_then(|value| json::as_bool(value))
+                == Option::Some(false),
+        );
+        testing::assert(
+            json::field(result, "completed").and_then(|value| json::as_bool(value))
+                == Option::Some(true),
+        );
+        testing::assert(
+            json::field(result, "phase").and_then(|value| json::as_string(value))
+                == Option::Some("options"),
+        );
+        let cause = testing::expect_some(
+            json::field(result, "error").and_then(|value| json::as_string(value)),
+            "original setup error",
+        );
+        testing::assert(error.starts_with(cause));
+        testing::assert(cause.contains(arguments[0]));
+    }
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn library_and_driver_paths_preserve_filesystem_parent_resolution() -> () {
+    let root = fixture();
+    let outer = path::join(root, "one");
+    let actual = path::join(root, "two");
+    let nested = path::join(actual, "nested");
+    testing::assert_ok(fs::create_dir(nested));
+    testing::assert_ok(fs::symbolic_link(nested, path::join(outer, "link")));
+    testing::assert_ok(fs::write_file_structured(path::join(outer, "driver"), "wrong driver"));
+    testing::assert_ok(fs::write_file_structured(path::join(actual, "driver"), "requested driver"));
+    let selected = outer + "/link/..";
+    let cwd = testing::expect_ok(env::current_dir_structured(), "current working directory");
+    testing::assert(selected.starts_with(cwd + "/"));
+    let relative = selected.byte_slice(cwd.byte_len() + 1, selected.byte_len());
+    for value in Vec::from_array([selected, relative]) {
+        testing::assert_eq(
+            testing::expect_ok(verify::resolve_library_root(value), "selected library directory"),
+            actual,
+        );
+        let options = testing::expect_ok(
+            verify::parse_options(Vec::from_array(["--goml", value + "/driver"]), root),
+            "selected driver path",
+        );
+        testing::assert_eq(
+            testing::expect_ok(fs::read_file_structured(options.goml), "selected driver"),
+            "requested driver",
+        );
+    }
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn library_paths_do_not_clean_away_missing_or_nondirectory_components() -> () {
+    let root = fixture();
+    testing::assert_ok(fs::write_file_structured(path::join(root, "file"), "ordinary file"));
+    for component in Vec::from_array(["missing", "file"]) {
+        let selected = root + "/" + component + "/../two";
+        testing::assert(!fs::is_dir(selected));
+        testing::assert_err(verify::resolve_library_root(selected));
+    }
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn expanded_libraries_are_unique_and_available_to_the_runner() -> () {
+    let libraries = verify::modules();
+    testing::assert_eq(libraries.len(), 75);
+    let unique = Vec::new();
+    for name in libraries {
+        testing::assert(!unique.contains(name));
+        unique.push(name);
+    }
+    let requested = Vec::from_array(
+        ["uuid", "yaml", "jwt", "s3", "wasm", "goir", "postgres", "protobuf", "oauth2", "cron"],
+    );
+    let options = testing::expect_ok(
+        verify::parse_options(requested, "/repo"),
+        "expanded library options",
+    );
+    testing::assert(options.selected == requested);
+    let all = testing::expect_ok(verify::parse_options(Vec::new(), "/repo"), "all modules");
+    testing::assert_eq(all.selected.len(), 77);
+    testing::assert(all.selected.contains("goml_stats"));
+    testing::assert(all.selected.contains("explorer"));
+}
+
+#[test]
+fn fingerprints_frame_paths_containing_delimiters() -> () {
+    let root = fixture();
+    let first = path::join(root, "first");
+    let second = path::join(root, "second");
+    testing::assert_ok(fs::create_dir_all(first));
+    testing::assert_ok(fs::write_file_structured(path::join(first, "a"), ""));
+    testing::assert_ok(fs::write_file_structured(path::join(first, "b"), ""));
+    testing::assert_ok(fs::create_dir_all(second));
+    let name = "a:" + hash::sha256(bytes::Bytes::new()) + "\nb";
+    testing::assert_ok(fs::write_file_structured(path::join(second, name), ""));
+    testing::assert_ne(
+        testing::expect_ok(verify::artifact_fingerprint(first), "separate file fingerprint"),
+        testing::expect_ok(verify::artifact_fingerprint(second), "newline path fingerprint"),
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn malformed_command_output_is_logged_verbatim_and_rejected() -> () {
+    let root = fixture();
+    let context = verify::Verification {
+        root,
+        libraries: root,
+        home: root,
+        goml: "/not-used",
+        records: Vec::new(),
+    };
+    let log = path::join(root, "binary.log");
+    testing::assert_err(
+        verify::run_command(
+            context,
+            Vec::from_array(["sh", "-c", "printf '\\377'"]),
+            root,
+            "",
+            log,
+            false,
+        ),
+    );
+    let output = testing::expect_ok(fs::read_bytes_structured(log), "verbatim output");
+    testing::assert(output.to_vec() == Vec::from_array([255.to_u8()]));
+    testing::assert_eq(context.records.len(), 1);
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn timed_out_commands_preserve_partial_output_and_deadline_evidence() -> () {
+    let root = fixture();
+    let context = verify::Verification {
+        root,
+        libraries: root,
+        home: root,
+        goml: "/not-used",
+        records: Vec::new(),
+    };
+    let log = path::join(root, "timeout.log");
+    testing::assert_err(
+        verify::run_command_timeout(
+            context,
+            Vec::from_array(["sh", "-c", "printf started; printf diagnostic >&2; exec sleep 5"]),
+            root,
+            "",
+            log,
+            false,
+            time::Duration::from_milliseconds(500),
+        ),
+    );
+    let output = testing::expect_ok(fs::read_file_structured(log), "partial timeout output");
+    testing::assert(output.contains("started"));
+    testing::assert(output.contains("diagnostic"));
+    testing::assert(output.contains("timed out"));
+    testing::assert_eq(
+        testing::expect_ok(fs::read_file_structured(log + ".stdout"), "raw timeout stdout"),
+        "started",
+    );
+    testing::assert_eq(
+        testing::expect_ok(fs::read_file_structured(log + ".stderr"), "raw timeout stderr"),
+        "diagnostic",
+    );
+    testing::assert_eq(context.records.len(), 1);
+    testing::assert(
+        json::field(context.records[0], "timed_out").and_then(|value| json::as_bool(value))
+            == Option::Some(true),
+    );
+    testing::assert(
+        json::field(context.records[0], "timeout_ms").and_then(|value| json::as_int(value))
+            == Option::Some(500),
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}
+
+#[test]
+fn log_redirection_keeps_command_arguments_literal() -> () {
+    let root = fixture();
+    let context = verify::Verification {
+        root,
+        libraries: root,
+        home: root,
+        goml: "/not-used",
+        records: Vec::new(),
+    };
+    let log = path::join(root, "quote ' space $value `text`/output.log");
+    let argument = "quote ' double \" $HOME $(printf expanded) ; trailing\\";
+    let output = testing::expect_ok(
+        verify::run_command(
+            context,
+            Vec::from_array(
+                ["sh", "-c", "printf '%s' \"$1\"; printf diagnostic >&2", "argument", argument],
+            ),
+            root,
+            "",
+            log,
+            false,
+        ),
+        "literal command argument",
+    );
+    testing::assert_eq(output, argument);
+    testing::assert_eq(
+        testing::expect_ok(fs::read_file_structured(log), "combined literal output"),
+        argument + "diagnostic",
+    );
+    testing::assert(
+        json::field(context.records[0], "timed_out").and_then(|value| json::as_bool(value))
+            == Option::Some(false),
+    );
+    testing::assert_ok(fs::remove_dir_all(root));
+}

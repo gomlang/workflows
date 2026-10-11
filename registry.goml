@@ -1,0 +1,487 @@
+package main;
+
+use std::bytes;
+use std::crypto::hash;
+use std::crypto::rand;
+use std::fs;
+use std::path;
+use std::toml;
+use std::utf8;
+use utf8::BytesUtf8;
+
+pub struct SourceFile {
+    pub name: string,
+    pub content: bytes::Bytes,
+}
+
+pub struct CapturedModule {
+    pub name: string,
+    pub files: Vec[SourceFile],
+}
+
+pub fn applications() -> Vec[string] {
+    Vec::from_array(["goml_stats", "explorer"])
+}
+
+pub fn modules() -> Vec[string] {
+    Vec::from_array(
+        [
+            "testkit",
+            "parser",
+            "regexp",
+            "tabwriter",
+            "proptest",
+            "cli",
+            "msgpack",
+            "graph",
+            "template",
+            "html",
+            "redis",
+            "pipeline",
+            "ndarray",
+            "sqlite",
+            "sql",
+            "lsp",
+            "markdown",
+            "diff",
+            "bitflags",
+            "lexer",
+            "tempfile",
+            "notify",
+            "walkdir",
+            "http",
+            "request",
+            "llvm",
+            "rope",
+            "tracing",
+            "web",
+            "ignore",
+            "syntax",
+            "cache",
+            "bigint",
+            "bigmath",
+            "decimal",
+            "incremental",
+            "datetime",
+            "color",
+            "image",
+            "unicode_text",
+            "ansi",
+            "terminal",
+            "tui",
+            "prompt",
+            "progress",
+            "diagnostics",
+            "tui_markdown",
+            "fuzzy",
+            "websocket",
+            "config",
+            "highlight",
+            "archive",
+            "object",
+            "dwarf",
+            "asn1",
+            "x509",
+            "xml",
+            "go_doc",
+            "compress",
+            "textproto",
+            "mime",
+            "mail",
+            "metrics",
+            "csv",
+            "bench",
+            "uuid",
+            "yaml",
+            "jwt",
+            "s3",
+            "wasm",
+            "goir",
+            "postgres",
+            "protobuf",
+            "oauth2",
+            "cron",
+        ],
+    )
+}
+
+fn ignored(name: string) -> bool {
+    name == "_artifact" || name == "_bootstrap" || name == ".git" || name == "__pycache__"
+        || name == ".goml"
+        || name == ".cache"
+        || name == "node_modules"
+        || name == "vendor"
+}
+
+fn directory_names(directory: string) -> Result[Vec[string], string] {
+    let names = fs::read_dir_names_structured(directory).map_err(|error| error.to_string())?;
+    names.sort_by(
+        |left, right| if left < right {
+            -1
+        } else if left > right {
+            1
+        } else {
+            0
+        },
+    );
+    Result::Ok(names)
+}
+
+fn source_manifest(directory: string, names: Vec[string], outputs: Vec[string]) -> Result[
+    Option[toml::Value],
+    string,
+] {
+    if !names.contains("goml.toml") {
+        return Result::Ok(Option::None);
+    }
+    let manifest = path::join(directory, "goml.toml");
+    let metadata = fs::symlink_metadata(manifest).map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_file() {
+        return Result::Ok(Option::None);
+    }
+    let content = fs::read_file_structured(manifest).map_err(|error| error.to_string())?;
+    let document = toml::parse(content).map_err(|error| manifest + ": " + error)?;
+    if let Some(value) = toml::field(document, "build").and_then(
+        |build| toml::field(build, "target-dir"),
+    ) {
+        let target = toml::as_string(value).ok_or("invalid build target directory: " + manifest)?;
+        if target == "" || path::is_absolute(target) || target.contains("\\")
+            || target.split("/").contains("..")
+            || path::clean(target) == "." {
+            return Result::Err("invalid build target directory: " + manifest);
+        }
+        outputs.push(path::join(directory, target));
+    }
+    Result::Ok(Option::Some(document))
+}
+
+fn collect_manifests(directory: string, output: Vec[(string, toml::Value)], outputs: Vec[string]) -> Result[
+    (),
+    string,
+] {
+    let names = directory_names(directory)?;
+    if let Some(document) = source_manifest(directory, names, outputs)? {
+        output.push((path::join(directory, "goml.toml"), document));
+    }
+    for name in names {
+        let child = path::join(directory, name);
+        if ignored(name) || outputs.contains(child) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(child).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_dir() {
+            collect_manifests(child, output, outputs)?;
+        }
+    }
+    Result::Ok(())
+}
+
+fn valid_module_name(name: string) -> bool {
+    name != "" && !name.contains("/") && !name.contains("\\") && !name.contains(":") && name != "."
+        && name != ".."
+}
+
+pub fn dependency_closure(libraries: string, selected: Vec[string]) -> Result[Vec[string], string] {
+    let pending = Vec::new();
+    for name in selected {
+        pending.push((name, "selected module " + name));
+    }
+    let visited = Vec::new();
+    let mut index = 0;
+    while index < pending.len() {
+        let (name, reason) = pending[index];
+        index += 1;
+        if visited.contains(name) {
+            continue;
+        }
+        if !valid_module_name(name) {
+            return Result::Err("invalid module directory: " + reason);
+        }
+        let directory = path::join(libraries, name);
+        let metadata = fs::symlink_metadata(directory).map_err(
+            |error| reason + ": " + error.to_string(),
+        )?;
+        if !metadata.file_type().is_dir() {
+            return Result::Err(reason + ": expected a source directory at " + directory);
+        }
+        let manifest = path::join(directory, "goml.toml");
+        let metadata = fs::symlink_metadata(manifest).map_err(
+            |error| reason + ": " + error.to_string(),
+        )?;
+        if !metadata.file_type().is_file() {
+            return Result::Err(reason + ": expected a source manifest at " + manifest);
+        }
+        visited.push(name);
+        let manifests = Vec::new();
+        collect_manifests(directory, manifests, Vec::new())?;
+        for (source, document) in manifests {
+            for section in Vec::from_array(["dependencies", "dev-dependencies"]) {
+                if let Some(value) = toml::field(document, section) {
+                    let entries = toml::as_table(value).ok_or(
+                        source + ": " + section + " must be a table",
+                    )?;
+                    for (coordinate, _) in entries {
+                        if coordinate.starts_with("ecosystem::") {
+                            let dependency = coordinate.byte_slice(
+                                "ecosystem::".byte_len(),
+                                coordinate.byte_len(),
+                            );
+                            if applications().contains(dependency) {
+                                return Result::Err(
+                                    "application cannot satisfy library dependency " + coordinate
+                                        + " required by "
+                                        + source,
+                                );
+                            }
+                            pending.push(
+                                (dependency, "dependency " + dependency + " required by " + source),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    visited.sort_by(
+        |left, right| if left < right {
+            -1
+        } else if left > right {
+            1
+        } else {
+            0
+        },
+    );
+    Result::Ok(visited)
+}
+
+fn capture_directory(
+    root: string,
+    relative: string,
+    output: Vec[SourceFile],
+    skip_modules: bool,
+    outputs: Vec[string],
+    reject_links: bool,
+) -> Result[(), string] {
+    let directory = path::join(root, relative);
+    let names = directory_names(directory)?;
+    if skip_modules {
+        let _ = source_manifest(directory, names, outputs)?;
+    }
+    for name in names {
+        if ignored(name) {
+            continue;
+        }
+        let child = if relative == "" {
+            name
+        } else {
+            path::join(relative, name)
+        };
+        let source = path::join(root, child);
+        if outputs.contains(source) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_symlink() {
+            if reject_links {
+                return Result::Err("unexpected source symbolic link: " + source);
+            }
+            continue;
+        }
+        if metadata.file_type().is_dir() {
+            if skip_modules
+                && fs::symlink_metadata(path::join(source, "goml.toml")).map(
+                    |value| value.file_type().is_file(),
+                ).unwrap_or(false) {
+                continue
+            }
+            capture_directory(root, child, output, skip_modules, outputs, reject_links)?;
+        } else if metadata.file_type().is_file() {
+            output.push(
+                SourceFile {
+                    name: child,
+                    content: fs::read_bytes_structured(source).map_err(|error| error.to_string())?,
+                },
+            );
+        }
+    }
+    Result::Ok(())
+}
+
+pub fn capture_modules(root: string, names: Vec[string]) -> Result[Vec[CapturedModule], string] {
+    let captured = Vec::new();
+    for name in names {
+        if !valid_module_name(name) {
+            return Result::Err("invalid module directory: " + name);
+        }
+        let files = Vec::new();
+        capture_directory(path::join(root, name), "", files, true, Vec::new(), false)?;
+        let mut manifest = "";
+        for file in files {
+            if file.name == "goml.toml" {
+                manifest = file.content.to_string_utf8().map_err(|error| error.to_string())?;
+            }
+        }
+        let document = toml::parse(manifest)?;
+        let coordinate = toml::field(document, "module").and_then(
+            |value| toml::field(value, "path"),
+        ).and_then(|value| toml::as_string(value)).ok_or("missing module coordinate: " + name)?;
+        if coordinate != "ecosystem::" + name {
+            return Result::Err("unexpected module coordinate: " + coordinate);
+        }
+        captured.push(CapturedModule { name, files });
+    }
+    Result::Ok(captured)
+}
+
+fn unique_directory(parent: string, prefix: string) -> Result[string, string] {
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    for _ in 0..16 {
+        let candidate = path::join(parent, prefix + hash::sha256(rand::bytes(32)?));
+        if fs::create_dir(candidate).is_ok() {
+            return Result::Ok(candidate);
+        }
+    }
+    Result::Err("cannot create unique directory in " + parent)
+}
+
+pub fn temporary_directory(parent: string) -> Result[string, string] {
+    unique_directory(parent, ".verification-")
+}
+
+fn registry_index(captured: Vec[CapturedModule]) -> string {
+    let mut index = "[modules]\n";
+    for module in captured {
+        index += "[modules.\"ecosystem::" + module.name + "\"]\npath = \"ecosystem/" + module.name
+            + "\"\n\n";
+    }
+    index
+}
+
+fn write_snapshot(staged: string, captured: Vec[CapturedModule]) -> Result[(), string] {
+    let registry = path::join(staged, "cache/registry");
+    fs::create_dir_all(registry).map_err(|error| error.to_string())?;
+    for module in captured {
+        let target = path::join(registry, "ecosystem/" + module.name);
+        for file in module.files {
+            let destination = path::join(target, file.name);
+            fs::create_dir_all(path::parent(destination).unwrap_or(target)).map_err(
+                |error| error.to_string(),
+            )?;
+            fs::write_bytes_structured(destination, file.content).map_err(|error| error.to_string())?;
+        }
+    }
+    fs::write_file_structured(path::join(registry, "index.toml"), registry_index(captured)).map_err(
+        |error| error.to_string(),
+    )
+}
+
+fn snapshot_digest(captured: Vec[CapturedModule]) -> string {
+    let mut digest = "goml-ecosystem-registry-unversioned\n";
+    for module in captured {
+        for file in module.files {
+            let name = module.name + "/" + file.name;
+            digest += name.byte_len().to_string() + ":" + name + hash::sha256(file.content);
+        }
+    }
+    hash::sha256(bytes::Bytes::from_string(digest))
+}
+
+fn validate_snapshot(home: string, captured: Vec[CapturedModule]) -> Result[(), string] {
+    let directories = Vec::from_array(["", "cache", "cache/registry"]);
+    if !captured.is_empty() {
+        directories.push("cache/registry/ecosystem");
+    }
+    for module in captured {
+        directories.push("cache/registry/ecosystem/" + module.name);
+    }
+    for relative in directories {
+        let directory = path::join(home, relative);
+        let metadata = fs::symlink_metadata(directory).map_err(|error| error.to_string())?;
+        if !metadata.file_type().is_dir() {
+            return Result::Err("expected a directory: " + directory);
+        }
+    }
+    let index = path::join(home, "cache/registry/index.toml");
+    if !fs::symlink_metadata(index).map_err(|error| error.to_string())?.file_type().is_file() {
+        return Result::Err("expected an index file: " + index);
+    }
+    if fs::read_file_structured(index).map_err(|error| error.to_string())?
+        != registry_index(captured) {
+        return Result::Err("registry index changed");
+    }
+    let actual = Vec::new();
+    for module in captured {
+        let files = Vec::new();
+        capture_directory(
+            path::join(home, "cache/registry/ecosystem/" + module.name),
+            "",
+            files,
+            true,
+            Vec::new(),
+            true,
+        )?;
+        actual.push(CapturedModule { name: module.name, files });
+    }
+    if snapshot_digest(actual) != snapshot_digest(captured) {
+        return Result::Err("registry sources changed");
+    }
+    Result::Ok(())
+}
+
+fn existing_snapshot(home: string, captured: Vec[CapturedModule]) -> Result[string, string] {
+    validate_snapshot(home, captured).map_err(
+        |error| "cannot reuse registry snapshot " + home + ": " + error,
+    )?;
+    Result::Ok(home)
+}
+
+pub fn publish_snapshot(root: string, captured: Vec[CapturedModule]) -> Result[string, string] {
+    let parent = path::join(root, "_artifact/registry-snapshots");
+    let home = path::join(parent, snapshot_digest(captured));
+    if fs::symlink_metadata(home).is_ok() {
+        return existing_snapshot(home, captured);
+    }
+    let temporary = temporary_directory(parent)?;
+    let staged = path::join(temporary, "home");
+    let result = write_snapshot(staged, captured).and_then(
+        |_| {
+            match fs::rename(staged, home) {
+                Result::Ok(()) => Result::Ok(home),
+                Result::Err(error) => if fs::symlink_metadata(home).is_ok() {
+                    existing_snapshot(home, captured)
+                } else {
+                    Result::Err(error.to_string())
+                },
+            }
+        },
+    );
+    let cleanup = fs::remove_dir_all(temporary).map_err(|error| error.to_string());
+    let home = result?;
+    cleanup?;
+    Result::Ok(home)
+}
+
+pub fn registry_snapshot(libraries: string, root: string, selected: Vec[string]) -> Result[
+    string,
+    string,
+] {
+    let names = Vec::new();
+    for name in dependency_closure(libraries, selected)? {
+        if !applications().contains(name) {
+            names.push(name);
+        }
+    }
+    publish_snapshot(root, capture_modules(libraries, names)?)
+}
+
+pub fn artifact_fingerprint(directory: string) -> Result[string, string] {
+    let files = Vec::new();
+    capture_directory(directory, "", files, false, Vec::new(), false)?;
+    let mut value = "";
+    for file in files {
+        if !path::file_name(file.name).unwrap_or("").starts_with(".") {
+            value += file.name.byte_len().to_string() + ":" + file.name + hash::sha256(file.content);
+        }
+    }
+    Result::Ok(hash::sha256(bytes::Bytes::from_string(value)))
+}

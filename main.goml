@@ -1,0 +1,204 @@
+package main;
+
+use std::env;
+use std::fs;
+use std::io;
+use std::path;
+use std::process;
+use std::toml;
+
+pub struct Options {
+    pub selected: Vec[string],
+    pub goml: string,
+    pub registry_only: bool,
+    pub race: bool,
+    pub list: bool,
+}
+
+pub fn parse_options(arguments: Vec[string], root: string) -> Result[Options, string] {
+    let checkout = path::parent(path::parent(root).unwrap_or(root)).unwrap_or(root);
+    let mut options = Options {
+        selected: Vec::new(),
+        goml: absolute_input_path(
+            env::var_structured("GOML").unwrap_or(path::join(checkout, "goml/stage2/bin/goml")),
+        )?,
+        registry_only: false,
+        race: true,
+        list: false,
+    };
+    let valid = modules();
+    valid.extend(applications());
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = arguments[index];
+        match argument {
+            "--goml" => {
+                index += 1;
+                if index == arguments.len() {
+                    return Result::Err("--goml requires a path");
+                }
+                options.goml = absolute_input_path(arguments[index])?;
+            },
+            "--registry-only" => {
+                options.registry_only = true;
+            },
+            "--no-race" => {
+                options.race = false;
+            },
+            "--list" | "--help" | "-h" => {
+                options.list = true;
+            },
+            _ => {
+                if !valid.contains(argument) {
+                    return Result::Err("unknown module or option: " + argument);
+                }
+                if !options.selected.contains(argument) {
+                    options.selected.push(argument);
+                }
+            },
+        }
+        index += 1;
+    }
+    if options.selected.is_empty() {
+        options.selected = valid;
+    }
+    Result::Ok(options)
+}
+
+pub fn repository_root(start: string) -> Result[string, string] {
+    let mut current = resolve_directory(start)?;
+    loop {
+        let manifest = path::join(current, "goml.toml");
+        if fs::is_file(manifest) {
+            let source = fs::read_file_structured(manifest).map_err(
+                |error| manifest + ": " + error.to_string(),
+            )?;
+            let document = toml::parse(source).map_err(|error| manifest + ": " + error.to_string())?;
+            let module_path = toml::field(document, "module").and_then(
+                |module| toml::field(module, "path"),
+            ).and_then(|value| toml::as_string(value));
+            if module_path == Option::Some("ecosystem::workflows") {
+                return Result::Ok(current);
+            }
+        }
+        match path::parent(current) {
+            Some(parent) => {
+                if parent == current {
+                    return Result::Err("cannot find repository root");
+                }
+                current = parent;
+            },
+            None => return Result::Err("cannot find repository root"),
+        }
+    }
+}
+
+fn absolute_input_path(selected: string) -> Result[string, string] {
+    if path::is_absolute(selected) {
+        Result::Ok(selected)
+    } else {
+        let current = env::current_dir_structured().map_err(|error| error.to_string())?;
+        Result::Ok(current + "/" + selected)
+    }
+}
+
+pub fn library_root(root: string) -> Result[string, string] {
+    let default = path::parent(root).unwrap_or(root);
+    let selected = env::var_structured("GOMLANG_LIBRARIES").unwrap_or(default);
+    resolve_library_root(selected)
+}
+
+pub fn resolve_library_root(selected: string) -> Result[string, string] {
+    if selected == "" {
+        return Result::Err("GOMLANG_LIBRARIES cannot be empty");
+    }
+    resolve_directory(selected).map_err(|error| "library " + error)
+}
+
+fn resolve_directory(selected: string) -> Result[string, string] {
+    let absolute = absolute_input_path(selected)?;
+    let mut resolved = "/";
+    // Resolve each directory before interpreting the next parent component.
+    for component in absolute.split("/") {
+        if component == "" {
+            continue;
+        }
+        let next = resolved + "/" + component;
+        if !fs::is_dir(next) {
+            return Result::Err("directory does not exist: " + absolute);
+        }
+        resolved = fs::canonicalize(next).map_err(|error| error.to_string())?;
+    }
+    Result::Ok(resolved)
+}
+
+fn execute() -> Result[(), string] {
+    let root = repository_root(env::current_dir_structured().map_err(|error| error.to_string())?)?;
+    let arguments = env::args();
+    execute_arguments(root, arguments.slice(1, arguments.len()).to_vec())
+}
+
+pub fn execute_arguments(root: string, arguments: Vec[string]) -> Result[(), string] {
+    let options = match parse_options(arguments, root) {
+        Result::Ok(options) => options,
+        Result::Err(error) => return setup_failed(root, arguments, "options", Option::None, error),
+    };
+    if options.list {
+        io::println(
+            "Usage: just ecosystem-test [--goml PATH] [--no-race] [MODULE...]\nNative GoML tests, example and downstream verification, cache stability, PTY and race checks.\n--registry-only prints the isolated registry GOML_HOME.",
+        );
+        for name in options.selected {
+            io::println(name);
+        }
+        return Result::Ok(());
+    }
+    let libraries = match library_root(root) {
+        Result::Ok(libraries) => libraries,
+        Result::Err(error) => return setup_failed(
+            root,
+            arguments,
+            "libraries",
+            Option::Some(options),
+            error,
+        ),
+    };
+    let home = match registry_snapshot(libraries, root, options.selected) {
+        Result::Ok(home) => home,
+        Result::Err(error) => return setup_failed(
+            root,
+            arguments,
+            "registry",
+            Option::Some(options),
+            error,
+        ),
+    };
+    if options.registry_only {
+        io::println(home);
+        return Result::Ok(());
+    }
+    verify_all(root, libraries, home, options)
+}
+
+fn setup_failed(
+    root: string,
+    arguments: Vec[string],
+    phase: string,
+    options: Option[Options],
+    error: string,
+) -> Result[(), string] {
+    let diagnostic = match write_setup_report(root, arguments, phase, options, error) {
+        Result::Ok(report) => error + "\nVerification report: " + report,
+        Result::Err(report_error) => error + "\nCould not write failure report: " + report_error,
+    };
+    Result::Err(diagnostic)
+}
+
+fn main() -> () {
+    match execute() {
+        Result::Ok(()) => (),
+        Result::Err(error) => {
+            io::eprintln(error);
+            process::exit(1);
+        },
+    }
+}

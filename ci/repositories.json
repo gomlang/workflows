@@ -1,0 +1,314 @@
+{
+  "ansi": {
+    "revision": "f978b4e4b5208e2014ff5c595dd594cf96342675",
+    "kind": "library"
+  },
+  "archive": {
+    "revision": "a143e9379a6d6440f3647b6415c9302689ffd939",
+    "kind": "library"
+  },
+  "asn1": {
+    "revision": "d744ff45c602c30d1cececf9f4bf3668f7dfe196",
+    "kind": "library"
+  },
+  "bench": {
+    "revision": "1ff351a417a01a859b7fb4b05ebbd93e63cfec65",
+    "kind": "library"
+  },
+  "bigint": {
+    "revision": "d302d63858e56bf3156496208d5c72cd24fef908",
+    "kind": "library"
+  },
+  "bigmath": {
+    "revision": "48ebc565846b3482581710d305dc932bb709ab75",
+    "kind": "library"
+  },
+  "bitflags": {
+    "revision": "da6cff79f2df2939b9ebe97bdc08716adf5eff5e",
+    "kind": "library"
+  },
+  "cache": {
+    "revision": "f413ddf6cd6a1a5ce86a50dfba171c3936844e99",
+    "kind": "library"
+  },
+  "cli": {
+    "revision": "79c53255dbd5d068e12e6f335a3dbd5ed2cf660d",
+    "kind": "library"
+  },
+  "color": {
+    "revision": "ee3eb8f458c08c7b10303c460b2bb093a0e914e4",
+    "kind": "library"
+  },
+  "compress": {
+    "revision": "35d464d421b2469b176f9fa25bd6a572a8c27279",
+    "kind": "library"
+  },
+  "config": {
+    "revision": "fbd46535dab08373aa2640e19a5f118980ade558",
+    "kind": "library"
+  },
+  "cron": {
+    "revision": "d90516475b0bea5991e39a9aa099a3fa06373dc1",
+    "kind": "library"
+  },
+  "csv": {
+    "revision": "63a9a49cb8c5292c17d83086ed13c3414588cd8d",
+    "kind": "library"
+  },
+  "datetime": {
+    "revision": "5c4a623a3e148b283c61ec09dac2dbb2977090fa",
+    "kind": "library"
+  },
+  "decimal": {
+    "revision": "7ea267b6f6f10d23a52de912c2a5a58233e9ffa8",
+    "kind": "library"
+  },
+  "diagnostics": {
+    "revision": "85d82597877f14a08015c05f7f7fcc9e8a2a7154",
+    "kind": "library"
+  },
+  "diff": {
+    "revision": "e8bf05a391830b670597ae142c4cd178ced2290c",
+    "kind": "library"
+  },
+  "dwarf": {
+    "revision": "b3e539aa744a02c6aac98f54c5ca81060b98c949",
+    "kind": "library"
+  },
+  "ecosystem": {
+    "revision": "21b24db2a6d52fa75d6fd38f016bfdfcaa62a8d2",
+    "kind": "catalog"
+  },
+  "explorer": {
+    "revision": "ea6f743c1caec41131d766743e5adff9c7998dc1",
+    "kind": "application"
+  },
+  "fuzzy": {
+    "revision": "758db951daf311edfe8187de23f6eebe8facab06",
+    "kind": "library"
+  },
+  "go_doc": {
+    "revision": "ebb1c718bafe97002da8ff6e4adaa833016bc684",
+    "kind": "library"
+  },
+  "goir": {
+    "revision": "b18e99c3b7d549448c3885a248a948f9ea407bdb",
+    "kind": "library"
+  },
+  "goml_stats": {
+    "revision": "985c0bac10ae204cf4d7f0fb7a8992821659745d",
+    "kind": "application"
+  },
+  "graph": {
+    "revision": "7c8dedeb8a4df7ffcf5ed864c4af7b48978a215a",
+    "kind": "library"
+  },
+  "highlight": {
+    "revision": "a7705a384b30aa9cfa3730ade1563fda3a1e2cd0",
+    "kind": "library"
+  },
+  "html": {
+    "revision": "96f508ec8430ca76264572183d27437879705146",
+    "kind": "library"
+  },
+  "http": {
+    "revision": "dd4fb090af93f7524717f55f7edb11dd0c22c3bc",
+    "kind": "library"
+  },
+  "ignore": {
+    "revision": "16f60d97d7e5ac2f034ba0c5f0ee0bcc9bde895f",
+    "kind": "library"
+  },
+  "image": {
+    "revision": "ec8ad170822057c83d17801d16f7365ff474c2d9",
+    "kind": "library"
+  },
+  "incremental": {
+    "revision": "6075976cb5e00f6c8999728b709591df5981d70a",
+    "kind": "library"
+  },
+  "jwt": {
+    "kind": "library",
+    "revision": "d4bfbb8388f8de2204031823f8379d87addf8bb0"
+  },
+  "lexer": {
+    "revision": "e825b0995ac0fc9419333884da4b0c9017b2fe21",
+    "kind": "library"
+  },
+  "llvm": {
+    "revision": "e65953cf614b1310f1fec2a4e129aa575304583f",
+    "kind": "library"
+  },
+  "lsp": {
+    "revision": "bdf2e4903f7bfca15fb6aa78e96ee1615b132da2",
+    "kind": "library"
+  },
+  "mail": {
+    "revision": "82bed897eec3ac0f883fcc722f7416d717928779",
+    "kind": "library"
+  },
+  "markdown": {
+    "revision": "21e198959addc03a354bd46c0b5f65dee0d4236a",
+    "kind": "library"
+  },
+  "metrics": {
+    "revision": "a8c94c5f5b8ff5852c1ab0264c6564d164c6ec10",
+    "kind": "library"
+  },
+  "mime": {
+    "revision": "ac0eae602beaa2f82ab980987c614825bca39b91",
+    "kind": "library"
+  },
+  "msgpack": {
+    "revision": "5b534326ed04ebf69124498bf73afaabe4ed0a45",
+    "kind": "library"
+  },
+  "ndarray": {
+    "revision": "4ddc1418e08f51656412e96c9119f3df52b49565",
+    "kind": "library"
+  },
+  "notify": {
+    "revision": "d1f71238fac25abe320960f6c1d08c2b393f4126",
+    "kind": "library"
+  },
+  "oauth2": {
+    "revision": "52f89f0599ba27b9ac1107578c0518bba2801412",
+    "kind": "library"
+  },
+  "object": {
+    "revision": "1c15bffc4d6f1c11c29c49e48794a2b1a3a24144",
+    "kind": "library"
+  },
+  "parser": {
+    "revision": "8750689937570dc328b517f0716f364363ffc9a8",
+    "kind": "library"
+  },
+  "pipeline": {
+    "revision": "cf87b96fdf82b2ef436943c39bf28d10f2c1de00",
+    "kind": "library"
+  },
+  "postgres": {
+    "revision": "4336268885c4e667758c97b75d40672c41db6962",
+    "kind": "library"
+  },
+  "progress": {
+    "revision": "a50d4573c1fa6668da2ca0b7c023ad03b02ce5e5",
+    "kind": "library"
+  },
+  "prompt": {
+    "revision": "63273160c498ddeb146914f27bc2501a6694a172",
+    "kind": "library"
+  },
+  "proptest": {
+    "revision": "66f056385b1a4daf3d51adb86530e41a4065884b",
+    "kind": "library"
+  },
+  "protobuf": {
+    "revision": "a0b53099960b097626dbd1c7b6a33fe09ec692fb",
+    "kind": "library"
+  },
+  "redis": {
+    "revision": "18c73b67ec4a4ddf6b53aee03e824c04e66d316b",
+    "kind": "library"
+  },
+  "regexp": {
+    "revision": "c8bcbbf65cbe25eca149e757f8c16e6924c32f03",
+    "kind": "library"
+  },
+  "request": {
+    "revision": "5ebc9d89e29708f0aa7e4d30685054c644e455f2",
+    "kind": "library"
+  },
+  "rope": {
+    "revision": "46a7364e2805abab5cb6252e35d39eb9b7c5bfd7",
+    "kind": "library"
+  },
+  "s3": {
+    "kind": "library",
+    "revision": "4d927eb244aab11f7fa3329c105916d650e1badd"
+  },
+  "sql": {
+    "revision": "2acc64f51bf39543e147429e6ad5536549973b81",
+    "kind": "library"
+  },
+  "sqlite": {
+    "revision": "edb50f7d0d21f38bf6c194e98f02dac5f3c106ed",
+    "kind": "library"
+  },
+  "syntax": {
+    "revision": "56a5b54b9d5cc624ef76d272edb9cfd5d2969317",
+    "kind": "library"
+  },
+  "tabwriter": {
+    "revision": "e44d07f523e74dd43226ebdd6370dc7332f70f1a",
+    "kind": "library"
+  },
+  "tempfile": {
+    "revision": "244e3f4a9eea5f14b08f24e3be325fcc79b13ebc",
+    "kind": "library"
+  },
+  "template": {
+    "revision": "a391def6ea1f233b618572204a016550b57c0497",
+    "kind": "library"
+  },
+  "terminal": {
+    "revision": "7463b1b26fe417bbdd6a37ab233f1281faafd382",
+    "kind": "library"
+  },
+  "testkit": {
+    "kind": "library",
+    "revision": "67a9a2d9fbe3e415d291d959cc3296167c52d82d"
+  },
+  "textproto": {
+    "revision": "a4b5425b267c3f159e7d2f050fb46e18e4f2d128",
+    "kind": "library"
+  },
+  "tracing": {
+    "revision": "39e63aee19f56ab4300bd6451ac3acec30b11bb2",
+    "kind": "library"
+  },
+  "tui": {
+    "revision": "6e982e72e255b6ae97c0381262139ea5f941b882",
+    "kind": "library"
+  },
+  "tui_markdown": {
+    "revision": "c19906971b5a75de39c0ad33be9a22dbead59fd2",
+    "kind": "library"
+  },
+  "unicode_text": {
+    "revision": "fb1fb6fdcfbefd5a4e3283462d8885971e4d9d1a",
+    "kind": "library"
+  },
+  "uuid": {
+    "kind": "library",
+    "revision": "221cb88009f217ee3aff3165e069873635b6d9dc"
+  },
+  "walkdir": {
+    "revision": "b3f512a9a9a1f50d1fbdb8bb44687ab5c09eb40d",
+    "kind": "library"
+  },
+  "wasm": {
+    "revision": "516dcd7507fa7eabf8fa858c8b1cecb2bba4286b",
+    "kind": "library"
+  },
+  "web": {
+    "revision": "442c30d8dcf3b853b636c9153f82e3b5c994d91b",
+    "kind": "library"
+  },
+  "websocket": {
+    "revision": "15ad3adc5fcdfb9db0bf33d268f3c8c148becce6",
+    "kind": "library"
+  },
+  "x509": {
+    "revision": "b23ff4fd4edd38baa594f73be443446ff23f04a7",
+    "kind": "library"
+  },
+  "xml": {
+    "revision": "7b391186feae6e95cb48a511fbce2fcab1c8f4df",
+    "kind": "library"
+  },
+  "yaml": {
+    "kind": "library",
+    "revision": "17f4525b6095c1ff317eee4114546cf23553f23d"
+  }
+}
