@@ -325,8 +325,6 @@ class InfrastructureTests(unittest.TestCase):
                     binary.parent.mkdir(parents=True, exist_ok=True)
                     binary.write_text("built " + name)
         def run(arguments, **kwargs):
-            if "tools/goml-go-meta/build.sh" in arguments:
-                (prefix / "bin").mkdir(parents=True)
             if "tools/lib/finalize-toolchain.sh" in arguments:
                 self.assertEqual((prefix / "bin/goml").read_text(), "built goml")
                 self.assertEqual((prefix / "bin/gomlc").read_text(), "built gomlc")
@@ -336,6 +334,8 @@ class InfrastructureTests(unittest.TestCase):
             ecosystem.install(prefix, config)
         self.assertEqual(released.call_args.args[0].name, "stage0")
         self.assertEqual((prefix / "source-revision").read_text(), revision + "\n")
+        self.assertEqual({path.name for path in (prefix / "bin").iterdir()},
+                         {"goml", "gomlc", "gomlfmt", "gomldoc", "gomllsp"})
 
     def test_checksum_failure_prevents_toolchain_execution(self):
         config = self.root / "toolchain.json"

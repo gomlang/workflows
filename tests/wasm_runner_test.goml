@@ -1,0 +1,100 @@
+package tests;
+
+use ecosystem::workflows as verify;
+use std::fs;
+use std::json;
+use std::path;
+use std::testing;
+
+#[test]
+fn wasm_fixture_checks_run_offline_and_propagate_failures() -> () {
+    let root = fixture();
+    let library = path::join(root, "wasm");
+    let scripts = Vec::from_array(["conformance", "differential", "extensions", "wasi_fixtures"]);
+    for directory in Vec::from_array(
+        ["tools", "examples/basic", "_artifact/build/pkg", "_artifact/bin/examples/basic"],
+    ) {
+        testing::assert_ok(fs::create_dir_all(path::join(library, directory)));
+    }
+    for script in scripts {
+        testing::assert_ok(
+            fs::write_file_structured(
+                path::join(library, "tools/" + script + ".py"),
+                "import sys\nassert sys.argv[1:] == ['check']\nprint('" + script + "')\n",
+            ),
+        );
+    }
+    testing::assert_ok(
+        fs::symbolic_link("/bin/true", path::join(library, "_artifact/bin/examples/basic/basic")),
+    );
+    let options = verify::Options {
+        selected: Vec::from_array(["wasm"]),
+        goml: "/bin/true",
+        registry_only: false,
+        race: false,
+        list: false,
+    };
+    for fail in Vec::from_array([false, true]) {
+        if fail {
+            testing::assert_ok(
+                fs::write_file_structured(
+                    path::join(library, "tools/differential.py"),
+                    "raise SystemExit(7)\n",
+                ),
+            );
+        }
+        let result = verify::verify_all(root, root, root, options);
+        testing::assert_eq(result.is_err(), fail);
+        let report = testing::expect_ok(
+            json::parse(
+                testing::expect_ok(
+                    fs::read_file_structured(path::join(root, "_artifact/verification/report.json")),
+                    "WASM verification report",
+                ),
+            ),
+            "report JSON",
+        );
+        testing::assert(
+            json::field(report, "success").and_then(json::as_bool) == Option::Some(!fail),
+        );
+        let records = testing::expect_some(
+            json::field(report, "commands").and_then(json::as_array),
+            "commands",
+        );
+        let mut count = 0;
+        for record in records {
+            let command = testing::expect_some(
+                json::field(record, "command").and_then(json::as_array),
+                "command",
+            );
+            if json::as_string(command[0]) == Option::Some("python3") {
+                testing::assert_eq(command.len(), 3);
+                testing::assert(
+                    json::as_string(command[1]) == Option::Some("tools/" + scripts[count] + ".py"),
+                );
+                testing::assert(json::as_string(command[2]) == Option::Some("check"));
+                testing::assert(
+                    json::field(record, "cwd").and_then(json::as_string) == Option::Some(library),
+                );
+                testing::assert_eq(
+                    json::field(record, "exit_code").and_then(json::as_int).unwrap_or(-1),
+                    if fail && count == 1 {
+                        7
+                    } else {
+                        0
+                    },
+                );
+                count += 1;
+            }
+        }
+        testing::assert_eq(
+            count,
+            if fail {
+                2
+            } else {
+                4
+            },
+        );
+    }
+    testing::assert_ok(fs::remove_dir_all(root));
+}
