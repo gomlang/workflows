@@ -19,11 +19,12 @@ candidate remains exempt from dependency reuse checks.
 its SHA-256 and the full compiler/driver source revision. Installation verifies
 and finalizes the released stage0, builds the pinned source using the upstream
 bootstrap scripts, then installs and finalizes the resulting toolchain. The
-installed `source-revision` file records its identity. This is a source-built
-development toolchain: the unversioned registry index requires driver changes
-newer than release 0.1.59. No unreleased archive is used as stage0.
+installed `source-revision` file records its identity. The published 0.1.60
+release supports the unversioned registry index and supplies stage0; the pinned
+source revision includes subsequent compiler and driver fixes. No unreleased
+archive is used as stage0.
 The runner uses Go 1.26 on Ubuntu 24.04. Native dependencies
-are downloaded explicitly before readonly GoML compilation, including manifests
+are downloaded explicitly before verification, including manifests
 in transitive dependencies, named examples and downstream fixture modules.
 Discovery skips generated directories and symbolic links; failures stop the job.
 Before native downloads start, every selected repository and transitive dependency

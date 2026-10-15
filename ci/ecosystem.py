@@ -143,9 +143,9 @@ def install(prefix, file=CI / "toolchain.json"):
         source = root / "goml"
         install_release(source / "stage0", file)
         # The pinned source's `just make` stages, without requiring just on CI.
-        run(["bash", "tools/goml-go-meta/build.sh", prefix], cwd=source)
         run(["bash", "bootstrap/build-stage.sh", "stage2", "stage0/bin/goml",
              "stage0/bin/gomlc"], cwd=source)
+        (prefix / "bin").mkdir(parents=True)
         for name in ("gomlc", "gomlfmt", "gomldoc", "gomllsp"):
             shutil.copy2(source / f"gomlc/_bootstrap/stage2/bin/cmd/{name}/{name}",
                          prefix / "bin" / name)

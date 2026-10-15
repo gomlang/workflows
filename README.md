@@ -105,7 +105,7 @@ README for prerequisites.
 Reference fixtures are stored as gzip streams in one `.gz` file or sequential
 `.gz.0`, `.gz.1`, ... chunks; the test loader requires `gzip` on `PATH`.
 
-For ordinary package development, the default central index is [gomlang/registry](https://github.com/gomlang/registry). Declare dependencies with `true`, run `goml update`, then use `goml test` or `goml run --example <name>`. The private snapshots below are for testing selected working checkouts without changing the user's registry cache. They require a GoML driver supporting the unversioned index format; use the source revision pinned in `ci/toolchain.json` until a compatible release is published.
+For ordinary package development, the default central index is [gomlang/registry](https://github.com/gomlang/registry). Declare dependencies with `true`, run `goml update`, then use `goml test` or `goml run --example <name>`. The private snapshots below are for testing selected working checkouts without changing the user's registry cache. GoML 0.1.60 supports the unversioned index format; the source revision pinned in `ci/toolchain.json` is the current verification baseline.
 
 To run an individual example manually, obtain the private registry path through
 the bootstrap recipe (which builds against the sibling `testkit` checkout):
