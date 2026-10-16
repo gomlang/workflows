@@ -15,13 +15,11 @@ with no staged, modified or untracked files; ignored build artifacts are preserv
 Invalid checkouts fail without resetting or deleting local changes. The triggering
 candidate remains exempt from dependency reuse checks.
 
-`toolchain.json` pins both the published GoML Linux amd64 stage0 archive with
-its SHA-256 and the full compiler/driver source revision. Installation verifies
-and finalizes the released stage0, builds the pinned source using the upstream
-bootstrap scripts, then installs and finalizes the resulting toolchain. The
-installed `source-revision` file records its identity. GoML 0.1.62 supplies the
-published stage0 and the matching pinned source, including the TLS APIs used by
-GoML HTTP servers. No unreleased archive is used as stage0.
+`toolchain.json` pins the published GoML 0.1.62 Linux amd64 archive and its
+official SHA-256. Installation verifies the archive before extraction and
+finalizes it with its own binaries. The release includes the TLS APIs used by
+GoML HTTP servers. Library jobs use this release directly without rebuilding
+the compiler and driver from the matching source on every run.
 The runner uses Go 1.26 on Ubuntu 24.04. Native dependencies
 are downloaded explicitly before verification, including manifests
 in transitive dependencies, named examples and downstream fixture modules.
@@ -81,9 +79,10 @@ same branch or pull request are cancelled.
 Update the relevant full commit SHA in `repositories.json` when adopting a new
 dependency baseline. A repository's own CI always tests its triggering candidate,
 even if its inventory entry still names an earlier baseline. Changes to the
-stage0 require the official archive checksum in `toolchain.json`.
-Advance `source_revision` to a published full commit SHA when adopting new
-compiler or driver changes; validate a clean bootstrap before rollout.
+released toolchain require the official archive checksum in `toolchain.json`.
+If compiler or driver changes require a source bootstrap, set `source_revision`
+to a published full commit SHA and validate a clean bootstrap before rollout.
+Remove that override once a published release contains the required changes.
 
 Run the infrastructure checks from this repository:
 
