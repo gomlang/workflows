@@ -36,7 +36,7 @@
     "kind": "library"
   },
   "color": {
-    "revision": "ee3eb8f458c08c7b10303c460b2bb093a0e914e4",
+    "revision": "6c1b7caed89c2f19f14b3637f44c2610dbdc5211",
     "kind": "library"
   },
   "compress": {
@@ -76,11 +76,11 @@
     "kind": "library"
   },
   "ecosystem": {
-    "revision": "21b24db2a6d52fa75d6fd38f016bfdfcaa62a8d2",
+    "revision": "917b2591e6fed698fa9ed15bda5f222986b0d93b",
     "kind": "catalog"
   },
   "explorer": {
-    "revision": "ea6f743c1caec41131d766743e5adff9c7998dc1",
+    "revision": "ee51e221909843416c81e47f9de6436d706acfe9",
     "kind": "application"
   },
   "fuzzy": {
@@ -88,7 +88,7 @@
     "kind": "library"
   },
   "go_doc": {
-    "revision": "ebb1c718bafe97002da8ff6e4adaa833016bc684",
+    "revision": "a0a3770c029197855a03ac5ca5c430983396f252",
     "kind": "library"
   },
   "goir": {
@@ -108,7 +108,7 @@
     "kind": "library"
   },
   "html": {
-    "revision": "96f508ec8430ca76264572183d27437879705146",
+    "revision": "89b545fda207cbd3cfa22f974c33fd2eff2740c1",
     "kind": "library"
   },
   "http": {
@@ -120,7 +120,7 @@
     "kind": "library"
   },
   "image": {
-    "revision": "ec8ad170822057c83d17801d16f7365ff474c2d9",
+    "revision": "343e7d364b94146182880d2fc7f882525a3b047f",
     "kind": "library"
   },
   "incremental": {
@@ -129,7 +129,7 @@
   },
   "jwt": {
     "kind": "library",
-    "revision": "d4bfbb8388f8de2204031823f8379d87addf8bb0"
+    "revision": "7f2f2a8c18dafbd04056296a71b1657f6a94502f"
   },
   "lexer": {
     "revision": "e825b0995ac0fc9419333884da4b0c9017b2fe21",
@@ -148,7 +148,7 @@
     "kind": "library"
   },
   "markdown": {
-    "revision": "21e198959addc03a354bd46c0b5f65dee0d4236a",
+    "revision": "960f52975b06445a00975699240e469fedf80b87",
     "kind": "library"
   },
   "metrics": {
@@ -248,7 +248,7 @@
     "kind": "library"
   },
   "template": {
-    "revision": "a391def6ea1f233b618572204a016550b57c0497",
+    "revision": "9640e19cd03e550c0cdaa760c5b7140ca3f96573",
     "kind": "library"
   },
   "terminal": {
@@ -272,7 +272,7 @@
     "kind": "library"
   },
   "tui_markdown": {
-    "revision": "c19906971b5a75de39c0ad33be9a22dbead59fd2",
+    "revision": "e311992ba3e5e3944473c086c5f97e35b80b0d09",
     "kind": "library"
   },
   "unicode_text": {
@@ -292,7 +292,7 @@
     "kind": "library"
   },
   "web": {
-    "revision": "442c30d8dcf3b853b636c9153f82e3b5c994d91b",
+    "revision": "f6259e7b7ae2819c7bd7a964f6b6771fdaf3b0be",
     "kind": "library"
   },
   "websocket": {
@@ -309,6 +309,6 @@
   },
   "yaml": {
     "kind": "library",
-    "revision": "17f4525b6095c1ff317eee4114546cf23553f23d"
+    "revision": "48f4920bc4555061893b71ba7e4be86abf40cef7"
   }
 }

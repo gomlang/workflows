@@ -19,10 +19,9 @@ candidate remains exempt from dependency reuse checks.
 its SHA-256 and the full compiler/driver source revision. Installation verifies
 and finalizes the released stage0, builds the pinned source using the upstream
 bootstrap scripts, then installs and finalizes the resulting toolchain. The
-installed `source-revision` file records its identity. The published 0.1.60
-release supports the unversioned registry index and supplies stage0; the pinned
-source revision includes subsequent compiler and driver fixes. No unreleased
-archive is used as stage0.
+installed `source-revision` file records its identity. GoML 0.1.61 supplies the
+published stage0 and the matching pinned source, including the TLS APIs used by
+GoML HTTP servers. No unreleased archive is used as stage0.
 The runner uses Go 1.26 on Ubuntu 24.04. Native dependencies
 are downloaded explicitly before verification, including manifests
 in transitive dependencies, named examples and downstream fixture modules.
@@ -31,7 +30,8 @@ Before native downloads start, every selected repository and transitive dependen
 must have a real source directory and root manifest (catalogs need no manifest).
 Missing dependencies identify the referring manifest, and source traversal errors
 fail the job instead of silently omitting nested native modules.
-This includes the HTML parsing/sanitization, image codec, YAML and JWT adapters.
+HTML, image, YAML, JWT, Web and Template use GoML implementations without
+native adapter dependencies.
 LLVM, SQLite and shell
 completion prerequisites are installed for their corresponding jobs.
 PostgreSQL jobs alone start a PostgreSQL 16 service, wait for its health check,

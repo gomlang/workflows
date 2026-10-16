@@ -225,9 +225,7 @@ fn native_test_packages(name: string) -> Vec[string] {
         Vec::from_array(["./..."])
     } else if name == "request" || name == "oauth2" {
         Vec::from_array(["./testserver"])
-    } else if Vec::from_array(["sqlite", "llvm", "html", "image", "yaml", "jwt", "postgres", "web"]).contains(
-        name,
-    ) {
+    } else if Vec::from_array(["sqlite", "llvm", "postgres"]).contains(name) {
         Vec::from_array(["./adapter"])
     } else {
         Vec::new()

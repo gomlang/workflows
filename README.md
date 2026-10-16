@@ -6,7 +6,7 @@ GitHub Actions workflows live in `.github/workflows/`. Generic fixture decoding,
 JSON comparisons, process helpers and the independent VT screen model live in
 [gomlang/testkit](https://github.com/gomlang/testkit), the runner's only library dependency.
 Consumers depend on `ecosystem::testkit`; this infrastructure module is not a library dependency.
-Libraries are sibling repositories in `~/git/gomlang/` by default. Ordinary examples live inside each library at `examples/<name>/`, sharing its root manifest and `[dev-dependencies]`. The eight native fixtures in bench, llvm, postgres, redis, sql, sqlite, web and yaml retain independent modules under `testdata/downstream/native/`. Set `GOMLANG_LIBRARIES` to select another library directory. Source files use `.goml`. Go 1.26+ and a GoML driver supporting the unversioned registry index are required. The recipes default to `../../goml/stage2/bin/goml`; `GOML=/absolute/path/to/goml` selects a compatible toolchain for both building and running the verifier.
+Libraries are sibling repositories in `~/git/gomlang/` by default. Ordinary examples live inside each library at `examples/<name>/`, sharing its root manifest and `[dev-dependencies]`. The eight downstream fixtures in bench, llvm, postgres, redis, sql, sqlite, web and yaml retain independent modules under `testdata/downstream/native/`. Set `GOMLANG_LIBRARIES` to select another library directory. Source files use `.goml`. Go 1.26+ and GoML 0.1.61+ are required. The recipes default to `../../goml/stage2/bin/goml`; `GOML=/absolute/path/to/goml` selects a compatible toolchain for both building and running the verifier.
 
 `GOMLANG_LIBRARIES` and `--goml` accept relative or absolute paths with filesystem
 resolution of symbolic links and `..`. Missing or non-directory components in
@@ -38,8 +38,8 @@ Unicode tools freshly download checksum-pinned inputs on every conformance run.
 
 Modules with concurrency checks run their suites again using `GOFLAGS=-race`
 and separate `_artifact/race/` targets. This includes declared native Go adapter
-tests where applicable. Native Go unit tests also run without the race detector,
-including the HTML, image, YAML and JWT adapters. UUID generation and S3 client
+tests where applicable. Native Go unit tests also run without the race detector where declared.
+HTML, image, YAML, JWT and Web regression tests run as GoML suites. UUID generation and S3 client
 tests participate in the race pass. `--no-race` explicitly skips this additional pass.
 
 The local runner does not fetch native Go dependencies. Before verifying a module
@@ -105,7 +105,7 @@ README for prerequisites.
 Reference fixtures are stored as gzip streams in one `.gz` file or sequential
 `.gz.0`, `.gz.1`, ... chunks; the test loader requires `gzip` on `PATH`.
 
-For ordinary package development, the default central index is [gomlang/registry](https://github.com/gomlang/registry). Declare dependencies with `true`, run `goml update`, then use `goml test` or `goml run --example <name>`. The private snapshots below are for testing selected working checkouts without changing the user's registry cache. GoML 0.1.60 supports the unversioned index format; the source revision pinned in `ci/toolchain.json` is the current verification baseline.
+For ordinary package development, the default central index is [gomlang/registry](https://github.com/gomlang/registry). Declare dependencies with `true`, run `goml update`, then use `goml test` or `goml run --example <name>`. The private snapshots below are for testing selected working checkouts without changing the user's registry cache. The published GoML 0.1.61 release and its matching source revision, pinned in `ci/toolchain.json`, form the current verification baseline.
 
 To run an individual example manually, obtain the private registry path through
 the bootstrap recipe (which builds against the sibling `testkit` checkout):
