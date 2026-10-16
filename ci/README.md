@@ -15,7 +15,7 @@ with no staged, modified or untracked files; ignored build artifacts are preserv
 Invalid checkouts fail without resetting or deleting local changes. The triggering
 candidate remains exempt from dependency reuse checks.
 
-`toolchain.json` pins the published GoML 0.1.62 Linux amd64 archive and its
+`toolchain.json` pins the published GoML 0.1.63 Linux amd64 archive and its
 official SHA-256. Installation verifies the archive before extraction and
 finalizes it with its own binaries. The release includes the TLS APIs used by
 GoML HTTP servers. Library jobs use this release directly without rebuilding

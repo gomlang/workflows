@@ -105,7 +105,7 @@ README for prerequisites.
 Reference fixtures are stored as gzip streams in one `.gz` file or sequential
 `.gz.0`, `.gz.1`, ... chunks; the test loader requires `gzip` on `PATH`.
 
-For ordinary package development, the default central index is [gomlang/registry](https://github.com/gomlang/registry). Declare dependencies with `true`, run `goml update`, then use `goml test` or `goml run --example <name>`. The private snapshots below are for testing selected working checkouts without changing the user's registry cache. The published GoML 0.1.62 release and its matching source revision, pinned in `ci/toolchain.json`, form the current verification baseline.
+For ordinary package development, the default central index is [gomlang/registry](https://github.com/gomlang/registry). Declare dependencies with `true`, run `goml update`, then use `goml test` or `goml run --example <name>`. The private snapshots below are for testing selected working checkouts without changing the user's registry cache. The published GoML 0.1.63 release, pinned with its official checksum in `ci/toolchain.json`, is the current verification baseline.
 
 To run an individual example manually, obtain the private registry path through
 the bootstrap recipe (which builds against the sibling `testkit` checkout):
@@ -143,7 +143,7 @@ just test
 ```
 
 Every ecosystem repository also runs these checks through GitHub Actions. The
-shared [CI configuration](ci/README.md) pins the source-built toolchain and sibling
+shared [CI configuration](ci/README.md) pins the released toolchain and sibling
 repository revisions, preserves the triggering candidate, installs native test
 dependencies, and retains failure logs. Workflows and catalog repositories
 run their own infrastructure and consistency checks.
