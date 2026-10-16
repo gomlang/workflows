@@ -19,7 +19,7 @@ candidate remains exempt from dependency reuse checks.
 its SHA-256 and the full compiler/driver source revision. Installation verifies
 and finalizes the released stage0, builds the pinned source using the upstream
 bootstrap scripts, then installs and finalizes the resulting toolchain. The
-installed `source-revision` file records its identity. GoML 0.1.61 supplies the
+installed `source-revision` file records its identity. GoML 0.1.62 supplies the
 published stage0 and the matching pinned source, including the TLS APIs used by
 GoML HTTP servers. No unreleased archive is used as stage0.
 The runner uses Go 1.26 on Ubuntu 24.04. Native dependencies
